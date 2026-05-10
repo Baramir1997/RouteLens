@@ -7,6 +7,3 @@ geopy
 pillow
 torch
 transformers
-streamlit
-folium
-streamlit-folium
