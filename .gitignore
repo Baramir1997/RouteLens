@@ -1,0 +1,18 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# Generated images / cache
+streetview_images/
+streetview_images_run*/
+
+# Secrets
+.env
+
+# Mac
+.DS_Store
