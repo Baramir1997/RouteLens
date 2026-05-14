@@ -11,6 +11,7 @@ from route_utils import (
 )
 from image_extraction import extract_images_from_points
 from point_ranker import rank_points_by_image_similarity
+from multi_model_reasoning import call_model
 
 
 app = FastAPI()
@@ -38,6 +39,13 @@ class SnapRequest(BaseModel):
 class ExtractAndRankRequest(BaseModel):
     sampled_points: list[list[float]]
     current_location: list[float]
+
+
+class ReasoningRequest(BaseModel):
+    route_points: list[list[float]]
+    sampled_points: list[list[float]]
+    ranked_results: list[dict]
+    current_images: list[dict]    
 
 
 @app.get("/")
@@ -97,6 +105,52 @@ def extract_and_rank(request: ExtractAndRankRequest):
 
     return {
         "ranked_results": ranked_results,
+        "current_images": image_result["current_images"],
         "metadata_path": image_result["metadata_path"],
         "output_dir": output_dir,
+    }
+
+
+@app.post("/api/apply-reasoning")
+def apply_reasoning(request: ReasoningRequest):
+    top_5 = request.ranked_results[:5]
+
+    highest_samples = []
+
+    for result in top_5:
+        route_images = [
+            score["route_image_path"]
+            for score in result["route_image_scores"]
+        ]
+
+        highest_samples.append({
+            "sampled_route_index": result["route_index"],
+            "score": result["smoothed_similarity"],
+            "point": result["point"],
+            "images": route_images,
+        })
+
+    user_images = [
+        img["image_path"]
+        for img in request.current_images
+        if img.get("found") and img.get("image_path")
+    ]
+
+    start_index, end_index = call_model(
+        route=request.route_points,
+        highest_samples=highest_samples,
+        user_images=user_images,
+    )
+
+    if start_index == end_index:
+        if end_index < len(request.route_points) - 1:
+            end_index += 1
+        elif start_index > 0:
+            start_index -= 1
+
+
+    return {
+        "reasoning_start_index": start_index,
+        "reasoning_end_index": end_index,
+         "reasoning_points": request.route_points[start_index:end_index + 1],
     }

@@ -82,8 +82,13 @@ function App() {
   const [sampledPoints, setSampledPoints] = useState([]);
   const [rankedResults, setRankedResults] = useState([]);
 
+  const [currentImages, setCurrentImages] = useState([]);
+  const [reasoningPoints, setReasoningPoints] = useState([]);
+
   const [loading, setLoading] = useState(false);
   const [rankingLoading, setRankingLoading] = useState(false);
+
+  const [reasoningLoading, setReasoningLoading] = useState(false);
 
   async function generateRoute() {
     if (!start || !destination) {
@@ -117,6 +122,8 @@ function App() {
       setCurrentLocation(null);
       setSnapDistance(null);
       setRankedResults([]);
+      setCurrentImages([]);
+      setReasoningPoints([]);
       setStage("ready_current");
     } catch (error) {
       console.error(error);
@@ -152,12 +159,55 @@ function App() {
 
       const data = await response.json();
       setRankedResults(data.ranked_results);
-      setStage("done");
+      setCurrentImages(data.current_images);
+      setReasoningPoints([]);
+      setStage("ready_reasoning");
     } catch (error) {
       console.error(error);
       alert("Localization failed. Check backend terminal.");
     } finally {
       setRankingLoading(false);
+    }
+  }
+
+  async function applyReasoning() {
+    if (sampledPoints.length === 0 || rankedResults.length === 0 || currentImages.length === 0) {
+      alert("Run localization first.");
+      return;
+    }
+
+    setReasoningLoading(true);
+
+    try {
+      const response = await fetch("http://127.0.0.1:8000/api/apply-reasoning", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          route_points: routePoints,
+          sampled_points: sampledPoints,
+          ranked_results: rankedResults,
+          current_images: currentImages,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Backend error: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      console.log("Reasoning response:", data);
+
+      setReasoningPoints(data.reasoning_points);
+      setRankedResults([]);
+      setStage("done");
+    } catch (error) {
+      console.error(error);
+      alert("Reasoning failed. Check backend terminal.");
+    } finally {
+      setReasoningLoading(false);
     }
   }
 
@@ -167,11 +217,13 @@ function App() {
     else if (stage === "ready_route") generateRoute();
     else if (stage === "ready_current") setStage("select_current");
     else if (stage === "ready_localization") runLocalization();
+    else if (stage === "ready_reasoning") applyReasoning();
   }
 
   function getButtonText() {
     if (loading) return "Generating Route...";
     if (rankingLoading) return "Running Localization...";
+    if (reasoningLoading) return "Applying Reasoning...";
 
     switch (stage) {
       case "ready_start":
@@ -190,8 +242,10 @@ function App() {
         return "Click Current Location on Map";
       case "ready_localization":
         return "Run Localization";
+      case "ready_reasoning":
+        return "Apply Reasoning";  
       case "done":
-        return "Localization Complete";
+        return "Localization Complete";  
       default:
         return "Continue";
     }
@@ -201,6 +255,7 @@ function App() {
     return (
       loading ||
       rankingLoading ||
+      reasoningLoading ||
       stage === "select_start" ||
       stage === "select_destination" ||
       stage === "select_current" ||
@@ -217,6 +272,8 @@ function App() {
     setRoutePoints([]);
     setSampledPoints([]);
     setRankedResults([]);
+    setCurrentImages([]);
+    setReasoningPoints([]);
   }
 
   return (
@@ -271,18 +328,29 @@ function App() {
 
         {routePoints.length > 0 && <Polyline positions={routePoints} weight={5} />}
 
-        {sampledPoints.map((point, index) => (
-          <CircleMarker
-            key={`sample-${index}`}
-            center={point}
-            radius={4}
+        {reasoningPoints.length > 1 && (
+          <Polyline
+            positions={reasoningPoints}
             pathOptions={{
-              color: "gray",
-              fillColor: "gray",
-              fillOpacity: 0.25,
+              color: "red",
+              weight: 8,
             }}
           />
-        ))}
+        )}
+
+        {reasoningPoints.length === 0 &&
+          sampledPoints.map((point, index) => (
+            <CircleMarker
+              key={`sample-${index}`}
+              center={point}
+              radius={4}
+              pathOptions={{
+                color: "gray",
+                fillColor: "gray",
+                fillOpacity: 0.25,
+              }}
+            />
+          ))}
 
         {rankedResults.map((result, index) => {
           const isTopPrediction = index === 0;
