@@ -7,3 +7,4 @@ geopy
 pillow
 torch
 transformers
+google-genai

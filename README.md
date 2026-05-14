@@ -1,6 +1,6 @@
 # RouteLens
 
-Computer vision route-localization prototype.
+Multimodal route-localization prototype using visual retrieval and LLM reasoning.
 
 RouteLens estimates where a user is located along a known route using images instead of GPS.
 
@@ -11,7 +11,8 @@ RouteLens estimates where a user is located along a known route using images ins
 3. Download Google Street View images for sampled points.
 4. Download/query images for the current location.
 5. Use CLIP image embeddings to compare current-location images against sampled route images.
-6. Return the most likely route locations.
+6. Use Gemini multimodal reasoning to analyze candidate route images against the user images.
+7. Estimate the most likely route segment containing the user.
 
 ## Stack
 
@@ -19,6 +20,7 @@ Backend:
 - FastAPI
 - PyTorch
 - Transformers / CLIP
+- Google Gemini API
 - Google Street View API
 - OSRM routing
 
@@ -33,8 +35,14 @@ Frontend:
 cd backend
 pip install -r requirements.txt
 export GOOGLE_API_KEY="YOUR_KEY_HERE"
+export GEMINI_API_KEY="YOUR_KEY_HERE"
 uvicorn main:app --reload
 ```
+
+```md
+Requires:
+- Google Street View API access
+- Gemini API key
 
 Backend runs at:
 
