@@ -10,6 +10,19 @@ import {
 } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
+import {
+  Activity,
+  Brain,
+  CheckCircle2,
+  Crosshair,
+  Loader2,
+  MapPin,
+  Navigation,
+  Play,
+  RotateCcw,
+  Route,
+} from "lucide-react";
+import "./App.css";
 
 const markerIcon = new L.Icon({
   iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
@@ -276,133 +289,282 @@ function App() {
     setReasoningPoints([]);
   }
 
+  const busy = loading || rankingLoading || reasoningLoading;
+  const currentStepLabel = getButtonText();
+  const routeReady = routePoints.length > 0;
+  const localizationReady = rankedResults.length > 0;
+  const reasoningReady = reasoningPoints.length > 1;
+  const topPrediction = rankedResults[0];
+
+  const workflowSteps = [
+    {
+      label: "Plan route",
+      icon: MapPin,
+      complete: Boolean(start && destination),
+      active: ["ready_start", "select_start", "ready_destination", "select_destination"].includes(stage),
+      detail: start && destination ? "Endpoints selected" : "Select start and destination",
+    },
+    {
+      label: "Generate route",
+      icon: Route,
+      complete: routeReady,
+      active: ["ready_route"].includes(stage) || loading,
+      detail: routeReady ? `${routePoints.length} route points` : "Build route geometry",
+    },
+    {
+      label: "Choose current location",
+      icon: Crosshair,
+      complete: Boolean(currentLocation),
+      active: ["ready_current", "select_current"].includes(stage),
+      detail: currentLocation ? "Snapped to route" : "Pick the observed position",
+    },
+    {
+      label: "Run localization",
+      icon: Activity,
+      complete: localizationReady || reasoningReady,
+      active: ["ready_localization"].includes(stage) || rankingLoading,
+      detail: localizationReady ? `${rankedResults.length} ranked candidates` : "Rank visual candidates",
+    },
+    {
+      label: "Apply reasoning",
+      icon: Brain,
+      complete: stage === "done",
+      active: ["ready_reasoning"].includes(stage) || reasoningLoading,
+      detail: stage === "done" ? "Reasoned segment ready" : "Refine top matches",
+    },
+  ];
+
+  const formatPoint = (point) => {
+    if (!point) return "Not selected";
+    return `${point[0].toFixed(5)}, ${point[1].toFixed(5)}`;
+  };
+
   return (
-    <div style={{ padding: "20px", fontFamily: "Arial" }}>
-      <h1>Visual Route Localization</h1>
+    <div className="app-shell">
+      <header className="topbar">
+        <div>
+          <p className="eyebrow">Geospatial AI route-localization</p>
+          <h1>RouteLens</h1>
+          <p className="subtitle">
+            Visual route matching and multimodal reasoning for known-route localization.
+          </p>
+        </div>
 
-      <div style={{ marginBottom: "12px", display: "flex", gap: "8px" }}>
-        <button
-          onClick={handleMainButton}
-          disabled={isMainButtonDisabled()}
-          style={{
-            padding: "10px 16px",
-            fontWeight: "bold",
-            cursor: isMainButtonDisabled() ? "not-allowed" : "pointer",
-          }}
-        >
-          {getButtonText()}
-        </button>
+        <div className="status-strip" aria-label="RouteLens status">
+          <span className={`status-pill ${busy ? "is-busy" : "is-ready"}`}>
+            {busy ? <Loader2 className="spin" size={14} /> : <CheckCircle2 size={14} />}
+            {busy ? "Processing" : "System ready"}
+          </span>
+          <span className="status-pill">Stage: {stage.replaceAll("_", " ")}</span>
+          <span className="status-pill">{sampledPoints.length} samples</span>
+        </div>
+      </header>
 
-        <button onClick={resetAll} style={{ padding: "10px 16px" }}>
-          Reset
-        </button>
-      </div>
+      <main className="workspace-grid">
+        <aside className="control-panel glass-panel">
+          <div className="panel-section">
+            <div className="section-heading">
+              <Navigation size={16} />
+              <span>Workflow</span>
+            </div>
 
-      <p>
-        Current step: <b>{getButtonText()}</b>
-      </p>
-
-      <MapContainer
-        center={[32.0853, 34.7818]}
-        zoom={14}
-        style={{ height: "650px", width: "100%", borderRadius: "12px" }}
-      >
-        <TileLayer
-          attribution="&copy; OpenStreetMap contributors"
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
-
-        <ClickHandler
-          stage={stage}
-          setStage={setStage}
-          setStart={setStart}
-          setDestination={setDestination}
-          routePoints={routePoints}
-          setCurrentLocation={setCurrentLocation}
-          setSnapDistance={setSnapDistance}
-        />
-
-        {start && <Marker position={start} icon={markerIcon} />}
-        {destination && <Marker position={destination} icon={markerIcon} />}
-        {currentLocation && <Marker position={currentLocation} icon={markerIcon} />}
-
-        {routePoints.length > 0 && <Polyline positions={routePoints} weight={5} />}
-
-        {reasoningPoints.length > 1 && (
-          <Polyline
-            positions={reasoningPoints}
-            pathOptions={{
-              color: "red",
-              weight: 8,
-            }}
-          />
-        )}
-
-        {reasoningPoints.length === 0 &&
-          sampledPoints.map((point, index) => (
-            <CircleMarker
-              key={`sample-${index}`}
-              center={point}
-              radius={4}
-              pathOptions={{
-                color: "gray",
-                fillColor: "gray",
-                fillOpacity: 0.25,
-              }}
-            />
-          ))}
-
-        {rankedResults.map((result, index) => {
-          const isTopPrediction = index === 0;
-          const isTopFive = index < 5;
-
-          return (
-            <CircleMarker
-              key={`rank-${index}`}
-              center={result.point}
-              radius={isTopPrediction ? 11 : isTopFive ? 8 : 5}
-              pathOptions={{
-                color: isTopPrediction ? "red" : isTopFive ? "yellow" : "gray",
-                fillColor: isTopPrediction ? "red" : isTopFive ? "yellow" : "gray",
-                fillOpacity: isTopFive ? 0.9 : 0.45,
-              }}
-            >
-              <Tooltip>
-                Rank #{index + 1} | Route index: {result.route_index} | Score:{" "}
-                {result.smoothed_similarity.toFixed(4)}
-              </Tooltip>
-            </CircleMarker>
-          );
-        })}
-      </MapContainer>
-
-      <div style={{ marginTop: "16px" }}>
-        <p>Start: {start ? JSON.stringify(start) : "not selected"}</p>
-        <p>Destination: {destination ? JSON.stringify(destination) : "not selected"}</p>
-        <p>
-          Current location:{" "}
-          {currentLocation ? JSON.stringify(currentLocation) : "not selected"}
-        </p>
-        <p>
-          Snap distance:{" "}
-          {snapDistance !== null ? `${snapDistance.toFixed(1)} meters` : "N/A"}
-        </p>
-
-        <p>Route points: {routePoints.length}</p>
-        <p>Sampled points: {sampledPoints.length}</p>
-
-        {rankedResults.length > 0 && (
-          <div>
-            <h2>Top Predictions</h2>
-            {rankedResults.slice(0, 5).map((result, index) => (
-              <p key={index}>
-                #{index + 1} | Route index: {result.route_index} | Score:{" "}
-                {result.smoothed_similarity.toFixed(4)}
-              </p>
-            ))}
+            <div className="workflow-list">
+              {workflowSteps.map((step, index) => {
+                const Icon = step.icon;
+                return (
+                  <div
+                    className={`workflow-step ${step.active ? "is-active" : ""} ${
+                      step.complete ? "is-complete" : ""
+                    }`}
+                    key={step.label}
+                  >
+                    <div className="step-index">{step.complete ? <CheckCircle2 size={14} /> : index + 1}</div>
+                    <div className="step-copy">
+                      <span>
+                        <Icon size={14} />
+                        {step.label}
+                      </span>
+                      <small>{step.detail}</small>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        )}
-      </div>
+
+          <div className="panel-section action-section">
+            <button className="primary-action" onClick={handleMainButton} disabled={isMainButtonDisabled()}>
+              {busy ? <Loader2 className="spin" size={16} /> : <Play size={16} />}
+              {currentStepLabel}
+            </button>
+
+            <button className="secondary-action" onClick={resetAll}>
+              <RotateCcw size={15} />
+              Reset
+            </button>
+          </div>
+
+          <div className="panel-section">
+            <div className="section-heading">
+              <Activity size={16} />
+              <span>Route stats</span>
+            </div>
+            <div className="metric-list">
+              <div className="metric-row">
+                <span>Start</span>
+                <strong>{formatPoint(start)}</strong>
+              </div>
+              <div className="metric-row">
+                <span>Destination</span>
+                <strong>{formatPoint(destination)}</strong>
+              </div>
+              <div className="metric-row">
+                <span>Current</span>
+                <strong>{formatPoint(currentLocation)}</strong>
+              </div>
+              <div className="metric-row">
+                <span>Snap distance</span>
+                <strong>{snapDistance !== null ? `${snapDistance.toFixed(1)} m` : "N/A"}</strong>
+              </div>
+              <div className="metric-row">
+                <span>Route points</span>
+                <strong>{routePoints.length}</strong>
+              </div>
+              <div className="metric-row">
+                <span>Sampled points</span>
+                <strong>{sampledPoints.length}</strong>
+              </div>
+            </div>
+          </div>
+
+          <div className="panel-section">
+            <div className="section-heading">
+              <Brain size={16} />
+              <span>Result status</span>
+            </div>
+            <div className="result-card">
+              <span className={`result-dot ${stage === "done" ? "is-success" : ""}`} />
+              <div>
+                <strong>{stage === "done" ? "Localization complete" : currentStepLabel}</strong>
+                <p>
+                  {topPrediction
+                    ? `Top candidate #${topPrediction.route_index} with score ${topPrediction.smoothed_similarity.toFixed(4)}`
+                    : reasoningReady
+                      ? "Reasoned route segment is highlighted on the map."
+                      : "Run each workflow step to resolve the current route position."}
+                </p>
+              </div>
+            </div>
+
+            {rankedResults.length > 0 && (
+              <div className="prediction-list">
+                {rankedResults.slice(0, 5).map((result, index) => (
+                  <div className="prediction-row" key={index}>
+                    <span>#{index + 1}</span>
+                    <strong>Route {result.route_index}</strong>
+                    <em>{result.smoothed_similarity.toFixed(4)}</em>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </aside>
+
+        <section className="map-workspace glass-panel">
+          <div className="map-header">
+            <div>
+              <p className="eyebrow">Live map workspace</p>
+              <h2>{currentStepLabel}</h2>
+            </div>
+            <div className="map-legend">
+              <span><i className="legend-route" />Route</span>
+              <span><i className="legend-sample" />Samples</span>
+              <span><i className="legend-match" />Matches</span>
+            </div>
+          </div>
+
+          <div className="map-frame">
+            <MapContainer center={[32.0853, 34.7818]} zoom={14} className="route-map">
+              <TileLayer
+                attribution="&copy; OpenStreetMap contributors"
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              />
+
+              <ClickHandler
+                stage={stage}
+                setStage={setStage}
+                setStart={setStart}
+                setDestination={setDestination}
+                routePoints={routePoints}
+                setCurrentLocation={setCurrentLocation}
+                setSnapDistance={setSnapDistance}
+              />
+
+              {start && <Marker position={start} icon={markerIcon} />}
+              {destination && <Marker position={destination} icon={markerIcon} />}
+              {currentLocation && <Marker position={currentLocation} icon={markerIcon} />}
+
+              {routePoints.length > 0 && (
+                <Polyline
+                  positions={routePoints}
+                  weight={5}
+                  pathOptions={{ color: "#d7dbe0", opacity: 0.82 }}
+                />
+              )}
+
+              {reasoningPoints.length > 1 && (
+                <Polyline
+                  positions={reasoningPoints}
+                  pathOptions={{
+                    color: "#6fbf9b",
+                    weight: 8,
+                    opacity: 0.9,
+                  }}
+                />
+              )}
+
+              {reasoningPoints.length === 0 &&
+                sampledPoints.map((point, index) => (
+                  <CircleMarker
+                    key={`sample-${index}`}
+                    center={point}
+                    radius={4}
+                    pathOptions={{
+                      color: "#9ca3af",
+                      fillColor: "#9ca3af",
+                      fillOpacity: 0.25,
+                      opacity: 0.75,
+                    }}
+                  />
+                ))}
+
+              {rankedResults.map((result, index) => {
+                const isTopPrediction = index === 0;
+                const isTopFive = index < 5;
+
+                return (
+                  <CircleMarker
+                    key={`rank-${index}`}
+                    center={result.point}
+                    radius={isTopPrediction ? 11 : isTopFive ? 8 : 5}
+                    pathOptions={{
+                      color: isTopPrediction ? "#88d6c1" : isTopFive ? "#c8b46b" : "#8f98a3",
+                      fillColor: isTopPrediction ? "#88d6c1" : isTopFive ? "#c8b46b" : "#8f98a3",
+                      fillOpacity: isTopFive ? 0.85 : 0.45,
+                      opacity: 0.95,
+                    }}
+                  >
+                    <Tooltip>
+                      Rank #{index + 1} | Route index: {result.route_index} | Score:{" "}
+                      {result.smoothed_similarity.toFixed(4)}
+                    </Tooltip>
+                  </CircleMarker>
+                );
+              })}
+            </MapContainer>
+          </div>
+        </section>
+      </main>
     </div>
   );
 }
