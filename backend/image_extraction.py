@@ -87,7 +87,7 @@ def download_google_streetview_image(
 
 def extract_images_from_points(
     route_points: List[Point],
-    current_point: Point,
+    current_point: Optional[Point] = None,
     api_key: Optional[str] = None,
     output_dir: str = "streetview_images",
     include_side_views: bool = False,
@@ -143,29 +143,30 @@ def extract_images_from_points(
 
     current_results = []
 
-    angle_step = 360 / current_num_angles
+    if current_point is not None and current_num_angles > 0:
+        angle_step = 360 / current_num_angles
 
-    for i in range(current_num_angles):
-        heading = i * angle_step
-        image_path = os.path.join(output_dir, f"current_{i:02d}_{int(heading):03d}.jpg")
+        for i in range(current_num_angles):
+            heading = i * angle_step
+            image_path = os.path.join(output_dir, f"current_{i:02d}_{int(heading):03d}.jpg")
 
-        if os.path.exists(image_path):
-            success = True
-        else:
-            success = download_google_streetview_image(
-                point=current_point,
-                api_key=api_key,
-                save_path=image_path,
-                heading=heading,
-            )
+            if os.path.exists(image_path):
+                success = True
+            else:
+                success = download_google_streetview_image(
+                    point=current_point,
+                    api_key=api_key,
+                    save_path=image_path,
+                    heading=heading,
+                )
 
-        current_results.append({
-            "current_index": i,
-            "point": current_point,
-            "heading": heading,
-            "image_path": image_path if success else None,
-            "found": success,
-        })
+            current_results.append({
+                "current_index": i,
+                "point": current_point,
+                "heading": heading,
+                "image_path": image_path if success else None,
+                "found": success,
+            })
 
     result = {
         "route_points": route_points,

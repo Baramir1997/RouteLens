@@ -8,3 +8,4 @@ pillow
 torch
 transformers
 google-genai
+python-multipart

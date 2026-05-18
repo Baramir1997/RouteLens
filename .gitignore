@@ -10,6 +10,9 @@ frontend/dist/
 # Generated images / cache
 streetview_images/
 streetview_images_run*/
+offline_route_caches/
+offline_uploads/
+backend/logs/
 
 # Secrets
 .env
