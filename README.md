@@ -1,96 +1,142 @@
 # RouteLens
 
-Multimodal route-localization prototype using visual retrieval and LLM reasoning.
+RouteLens is a visual route-localization prototype that estimates where a user is along a known route using imagery instead of GPS.
 
-RouteLens estimates where a user is located along a known route using images instead of GPS.
+This branch, `experimental-offline-mode-UI`, extends the original RouteLens prototype with an experimental offline-cache workflow and a redesigned user interface for clearer demos.
 
-## Motivation
+![RouteLens experimental UI](assets/experimental_ui_preview.png)
 
-RouteLens was designed as a backup localization system for situations where GPS becomes unreliable or unavailable.
+## What This Branch Adds
 
-Rather than attempting to fully replace GPS, RouteLens focuses on a more constrained problem: estimating a user’s position along a known route using visual information and multimodal reasoning.
+### Experimental Offline Mode
 
-By constraining the problem to a predefined route, the system can leverage image-based retrieval and multimodal reasoning to narrow localization to a plausible route segment.
+The offline-mode work explores a cache-based version of RouteLens:
 
-This project explores the capabilities and limitations of combining visual retrieval and multimodal reasoning for route-level localization.
+1. Generate a route between a start point and destination.
+2. Sample points along that route.
+3. Download Google Street View images for the sampled points.
+4. Compute CLIP embeddings for those route images.
+5. Save the route images, metadata, and embeddings locally.
+6. Let the user upload a photo.
+7. Embed the uploaded photo with CLIP.
+8. Compare the uploaded-photo embedding against the saved route embeddings.
+9. Show the most visually similar route locations with a confidence score.
 
-## Pipeline
+The goal is to support localization on a previously prepared route without making new Street View or Gemini calls during matching.
 
-1. Generate a route between a start and destination using OSRM
-2. Sample points along the route every N meters
-3. Extract Google Street View images for each sampled point
-4. Extract images from the user/current location
-5. Compute CLIP image embeddings
-6. Rank route points by visual similarity
-7. Use Gemini multimodal reasoning over the top candidates
-8. Return the estimated route segment
+Important: preparing the cache still requires Google Street View access. The offline part refers to the matching step after a route cache already exists.
 
-## Components
+### UI Redesign
 
-### Route Generation
-Uses OSRM to generate dense route geometry and sampled route points.
+This branch also redesigns the frontend around the user journey:
 
-### Image Extraction
-Downloads Google Street View imagery from multiple headings for both route points and the current location.
+- Plan route
+- Prepare cache
+- Upload photo
+- Match location
+- View confidence and top visual matches
 
-### Visual Retrieval
-Each sampled route image and current-location image is embedded using CLIP image embeddings.
+The interface uses a dark glass-style layout with:
 
-The system compares the current-location embeddings against the route embeddings to rank the most visually similar route points.
+- a persistent status/header bar
+- a guided workflow panel
+- a larger route map
+- photo evidence previews
+- top visual match results
+- clearer route/cache/upload states
 
-Multiple image headings are used to improve robustness against viewpoint differences and orientation changes.
+## Core Pipeline
 
-### Multimodal Reasoning
-The top retrieval candidates are passed to Gemini 2.5 Flash together with the corresponding route imagery and current-location imagery.
+The original online RouteLens pipeline is:
 
-The model reasons over visual landmarks, road structure, scene layout, and spatial consistency in order to estimate the most likely route segment instead of relying purely on embedding similarity scores.
+1. Use OSRM to generate a driving route between start and destination.
+2. Sample route points every fixed number of meters.
+3. Download Google Street View imagery for each sampled route point.
+4. Download Street View imagery for the user's/current location.
+5. Use CLIP to convert each image into a normalized embedding vector.
+6. Compare current-location embeddings against route-image embeddings using cosine similarity.
+7. Rank route points by visual similarity.
+8. Send the top candidates to Gemini 2.5 Flash for multimodal reasoning.
+9. Return the most likely route segment.
 
-## Retrieval vs Multimodal Reasoning
+## How Image Matching Works
 
-The initial CLIP-based retrieval stage identifies visually similar route points, but similarity scores alone can still produce ambiguous or noisy candidates.
+RouteLens uses CLIP image embeddings for visual retrieval.
 
-The multimodal reasoning stage uses Gemini 2.5 Flash to reason over the top retrieval candidates together with the current-location imagery in order to estimate a more spatially consistent route segment.
+For each route point, the backend downloads multiple Street View headings such as forward, right, backward, and left. Each image is embedded with CLIP and normalized.
 
-### Initial Retrieval Candidates
+For the query/current-location imagery, the backend also computes CLIP embeddings. It then compares each query embedding with each route image embedding using a dot product between normalized vectors, which is equivalent to cosine similarity.
 
-![Retrieval Candidates](assets/retrieval_candidates.png)
+The ranking logic groups scores by route index:
 
-### Final Reasoning Result
+- each route image is compared with the available query images
+- the best query match for that route image is kept
+- each route point receives a combined similarity score from its strongest views
+- route points are sorted by similarity
+- the top candidates are shown on the map and can be passed to Gemini
 
-![Reasoning Result](assets/reasoning_result.png)
+This gives the system a fast visual retrieval stage before the more expensive multimodal reasoning stage.
+
+## Gemini Reasoning
+
+CLIP retrieval can find visually similar candidates, but it may confuse repetitive urban areas, similar intersections, or visually similar road segments.
+
+Gemini is used as a second-stage reasoning model. It receives:
+
+- the dense route geometry
+- the top CLIP retrieval candidates
+- candidate Street View images
+- current-location images
+- similarity scores and route metadata
+
+Gemini then reasons over landmarks, road layout, building placement, lane direction, sidewalks, vegetation, signs, and spatial consistency to estimate a likely route segment.
 
 ## Tech Stack
 
 ### Frontend
+
 - React
-- Leaflet
 - Vite
+- Leaflet
+- Lucide icons
 
 ### Backend
+
 - FastAPI
 - Python
+- PyTorch
+- Transformers
+- Pillow
 
-### AI Models
-- CLIP
-- Gemini 2.5 Flash
+### Models
 
-### APIs & Services
-- Google Street View API
+- CLIP for image embeddings and visual retrieval
+- Gemini 2.5 Flash for multimodal reasoning
+
+### APIs
+
 - OSRM Routing API
+- Google Street View Static API
+- Gemini API
 
-## Backend setup
+## Backend Setup
 
 ```bash
 cd backend
 pip install -r requirements.txt
-export GOOGLE_API_KEY="YOUR_KEY_HERE"
-export GEMINI_API_KEY="YOUR_KEY_HERE"
+export GOOGLE_API_KEY="YOUR_STREET_VIEW_KEY"
+export GEMINI_API_KEY="YOUR_GEMINI_KEY"
 uvicorn main:app --reload
 ```
 
-Requires:
-- Google Street View API access
-- Gemini API key
+On Windows PowerShell:
+
+```powershell
+cd backend
+$env:GOOGLE_API_KEY="YOUR_STREET_VIEW_KEY"
+$env:GEMINI_API_KEY="YOUR_GEMINI_KEY"
+.\.venv\Scripts\python.exe -m uvicorn main:app --reload
+```
 
 Backend runs at:
 
@@ -98,7 +144,7 @@ Backend runs at:
 http://127.0.0.1:8000
 ```
 
-## Frontend setup
+## Frontend Setup
 
 ```bash
 cd frontend
@@ -106,15 +152,19 @@ npm install
 npm run dev
 ```
 
-Frontend runs at:
+Frontend usually runs at:
 
 ```text
-http://localhost:5173
+http://127.0.0.1:5173
 ```
+
+If that port is busy, Vite may use the next available port.
 
 ## Current Limitations
 
-- Current demo uses Street View imagery for both route and user location
-- Performance can degrade in visually repetitive areas
-- Retrieval rankings are still somewhat noisy
-- System currently assumes a known route
+- Street View cache preparation still requires a valid Google Street View Static API key.
+- Gemini reasoning requires a Gemini API key.
+- Offline matching depends on a local CLIP model and cached route embeddings.
+- The offline workflow is experimental and should be validated before using it as the primary demo path.
+- The system assumes the user is somewhere along a known route.
+- Repetitive streets and visually similar intersections can reduce retrieval confidence.
